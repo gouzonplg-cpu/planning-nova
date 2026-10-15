@@ -1326,7 +1326,7 @@ table.pg td { border: 1px solid var(--border); padding: 0; vertical-align: top; 
     <div class="dj-header">
       <h2 id="dj-title" style="margin:0;" title="Glisse ce bandeau pour déplacer la fenêtre"></h2>
       <button class="btn btn-secondary btn-sm" id="dj-pause-seuil-btn" onclick="openPauseSettings()"></button>
-      <button class="btn btn-secondary btn-sm" id="dj-voir-derriere" onclick="toggleVoirDerriere('modal-day','dj-voir-derriere')" title="Rend le fond transparent et cliquable : tu peux faire défiler et consulter le planning derrière la fenêtre">👁 Voir derrière</button>
+      <button class="btn btn-secondary btn-sm" id="dj-voir-derriere" onclick="toggleVoirDerriere('modal-day','dj-voir-derriere')" title="Rend la fenêtre translucide et le fond cliquable : tu vois le planning à travers la fenêtre et tu peux le faire défiler">👁 Voir derrière</button>
       <label class="dj-opacite" title="Rend la fenêtre translucide pour voir le planning à travers">Opacité <input type="range" id="dj-opacite" min="30" max="100" value="100" oninput="setOpaciteFenetre('modal-day', this.value)"></label>
       <div class="dj-total-badge" id="dj-week-badge" title="Total de la semaine par rapport au contrat de l'employé"></div>
       <div class="dj-total-badge" id="dj-total-badge"></div>
@@ -1526,7 +1526,7 @@ table.pg td { border: 1px solid var(--border); padding: 0; vertical-align: top; 
     <button class="modal-close" onclick="closeModal('modal-instance')">✕</button>
     <div class="mi-header">
       <h2 title="Glisse ce bandeau pour déplacer la fenêtre">⏱️ Horaire précis</h2>
-      <button class="btn btn-secondary btn-sm" id="mi-voir-derriere" onclick="toggleVoirDerriere('modal-instance','mi-voir-derriere')" title="Fond transparent et cliquable : tu vois et peux faire défiler le planning derrière la fenêtre">👁 Voir derrière</button>
+      <button class="btn btn-secondary btn-sm" id="mi-voir-derriere" onclick="toggleVoirDerriere('modal-instance','mi-voir-derriere')" title="Rend la fenêtre translucide et le fond cliquable : tu vois le planning à travers la fenêtre et tu peux le faire défiler">👁 Voir derrière</button>
     </div>
     <input type="hidden" id="mi-id">
     <div class="form-row">
@@ -2250,7 +2250,7 @@ table.pg td { border: 1px solid var(--border); padding: 0; vertical-align: top; 
 const DB_KEY = 'planningnova_data';
 // Version de l'appli — format AAAA-MM-JJ-NN, à incrémenter à chaque nouveau déploiement sur
 // GitHub Pages. Sert uniquement à détecter/annoncer les mises à jour, aucun impact sur les données.
-const APP_VERSION = '2.9.2';
+const APP_VERSION = '2.9.3';
 // Panier mensualisé (règle 4) : un taux HEBDOMADAIRE (5/semaine) lissé sur l'année puis divisé par
 // 12 — jamais "5 × nombre de semaines calendaires du mois affiché" (qui varie entre 4 et 5 selon
 // les mois et fausserait le total). 5 × 52 semaines ÷ 12 mois ≈ 21,67/mois, arrondi à 2 décimales.
@@ -2281,6 +2281,9 @@ function compareVersions(a, b) {
 // Historique des mises à jour — mis à jour à chaque nouvelle version livrée, un item par version
 // (la plus récente en premier). Affiché dans Paramètres > Nouveautés.
 const CHANGELOG = [
+  { v: '2.9.3', items: [
+    'Bouton « 👁 Voir derrière » : il rend désormais aussi la fenêtre elle-même translucide (≈ 45 %) pour voir le planning à travers elle, en plus du fond cliquable. Second clic : retour à la normale.',
+  ] },
   { v: '2.9.2', items: [
     'Fenêtres « Édition d\'une journée » et « Horaire précis » : elles se redimensionnent maintenant en tirant leur coin bas-droit (utile quand elles occupent tout l\'écran), et la fenêtre de la journée a un curseur « Opacité » pour la rendre translucide et voir le planning à travers.',
   ] },
@@ -4736,7 +4739,12 @@ function setOpaciteFenetre(id, pct) {
 }
 function toggleVoirDerriere(id, btnId) {
   const on = document.getElementById(id).classList.toggle('dj-transparent');
-  document.getElementById(btnId).textContent = on ? '👁 Fond normal' : '👁 Voir derrière';
+  document.getElementById(btnId).textContent = on ? '👁 Fenêtre normale' : '👁 Voir derrière';
+  // Fenêtre translucide (≈ 45 %) pour voir le planning À TRAVERS elle, fond cliquable ; retour à 100 % au second clic.
+  const pct = on ? 45 : 100;
+  setOpaciteFenetre(id, pct);
+  const sl = document.getElementById('dj-opacite');
+  if (id === 'modal-day' && sl) sl.value = pct;
 }
 document.addEventListener('pointerdown', ev => {
   const head = ev.target.closest && ev.target.closest('#modal-day .dj-header, #modal-instance .mi-header');
