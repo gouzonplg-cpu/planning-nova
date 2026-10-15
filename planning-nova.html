@@ -129,10 +129,12 @@ label { display: block; font-size: 11px; font-weight: 700; text-transform: upper
 .repos-jour-chk input { width: 15px; height: 15px; margin: 0; }
 .repos-jour-chk:has(input:checked) { border-color: #9d8fff; background: rgba(157,143,255,.18); }
 /* Fenêtre « jour » : déplaçable par son bandeau, fond allégé, et mode « voir derrière » */
-#modal-day { background: rgba(0,0,0,.35); }
-#modal-day .dj-header { cursor: move; user-select: none; touch-action: none; }
-#modal-day.dj-transparent { background: transparent; pointer-events: none; }
-#modal-day.dj-transparent .modal { pointer-events: auto; box-shadow: 0 10px 50px rgba(0,0,0,.55); }
+#modal-day, #modal-instance { background: rgba(0,0,0,.35); }
+#modal-day .dj-header, #modal-instance .mi-header { cursor: move; user-select: none; touch-action: none; }
+#modal-instance .mi-header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding-right: 26px; }
+#modal-instance .mi-header h2 { margin: 0; }
+.modal-overlay.dj-transparent { background: transparent !important; pointer-events: none; }
+.modal-overlay.dj-transparent .modal { pointer-events: auto; box-shadow: 0 10px 50px rgba(0,0,0,.55); }
 .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px;
   width: 560px; max-width: 92vw; max-height: 88vh; overflow-y: auto; position: relative; }
 .modal h2 { font-size: 16px; font-weight: 700; margin-bottom: 18px; }
@@ -1320,7 +1322,7 @@ table.pg td { border: 1px solid var(--border); padding: 0; vertical-align: top; 
     <div class="dj-header">
       <h2 id="dj-title" style="margin:0;" title="Glisse ce bandeau pour déplacer la fenêtre"></h2>
       <button class="btn btn-secondary btn-sm" id="dj-pause-seuil-btn" onclick="openPauseSettings()"></button>
-      <button class="btn btn-secondary btn-sm" id="dj-voir-derriere" onclick="toggleDjVoirDerriere()" title="Rend le fond transparent et cliquable : tu peux faire défiler et consulter le planning derrière la fenêtre">👁 Voir derrière</button>
+      <button class="btn btn-secondary btn-sm" id="dj-voir-derriere" onclick="toggleVoirDerriere('modal-day','dj-voir-derriere')" title="Rend le fond transparent et cliquable : tu peux faire défiler et consulter le planning derrière la fenêtre">👁 Voir derrière</button>
       <div class="dj-total-badge" id="dj-week-badge" title="Total de la semaine par rapport au contrat de l'employé"></div>
       <div class="dj-total-badge" id="dj-total-badge"></div>
     </div>
@@ -1517,7 +1519,10 @@ table.pg td { border: 1px solid var(--border); padding: 0; vertical-align: top; 
 <div class="modal-overlay" id="modal-instance">
   <div class="modal" style="width:380px;">
     <button class="modal-close" onclick="closeModal('modal-instance')">✕</button>
-    <h2>⏱️ Horaire précis</h2>
+    <div class="mi-header">
+      <h2 title="Glisse ce bandeau pour déplacer la fenêtre">⏱️ Horaire précis</h2>
+      <button class="btn btn-secondary btn-sm" id="mi-voir-derriere" onclick="toggleVoirDerriere('modal-instance','mi-voir-derriere')" title="Fond transparent et cliquable : tu vois et peux faire défiler le planning derrière la fenêtre">👁 Voir derrière</button>
+    </div>
     <input type="hidden" id="mi-id">
     <div class="form-row">
       <div class="form-group">
@@ -2273,7 +2278,7 @@ function compareVersions(a, b) {
 const CHANGELOG = [
   { v: '2.9.0', items: [
     'Fiche employé : « Jours de repos habituels » — on peut maintenant cocher plusieurs jours (au lieu d\'un seul). Ils servent au décompte des congés et s\'affichent « REPOS HEBDO » dans le planning si l\'option est activée (Paramètres > Options). Les fiches existantes gardent leur jour unique, rien n\'est modifié.',
-    'Fenêtre d\'édition d\'une journée : elle se déplace en glissant son bandeau du haut, le fond est moins sombre, et le bouton « 👁 Voir derrière » rend le fond transparent et cliquable pour consulter/faire défiler le planning pendant le réglage.',
+    'Fenêtres « Édition d\'une journée » et « ⏱️ Horaire précis » (réglage d\'une tâche) : elles se déplacent en glissant leur bandeau du haut, le fond est moins sombre, et le bouton « 👁 Voir derrière » rend le fond transparent et cliquable pour consulter/faire défiler le planning pendant le réglage.',
   ] },
   { v: '2.8.3', items: [
     'Historique : chaque connexion d\'un admin (identifiant + mot de passe saisis) est désormais tracée avec son nom et l\'heure (environ 200 octets par ligne). Un simple rechargement de page dans un onglet déjà connecté n\'ajoute rien.',
@@ -4684,33 +4689,35 @@ function openDayDetail(empId, dk) {
   openModal('modal-day');
 }
 
-// ----- Fenêtre « jour » : déplaçable (glisser le bandeau) + mode « voir derrière » -----
+// ----- Fenêtres « jour » et « Horaire précis » : déplaçables (glisser le bandeau) + mode « voir derrière » -----
 let _djDrag = null;
-function resetDjPosition() {
-  const m = document.querySelector('#modal-day .modal');
+const _FENETRES_MOBILES = { 'modal-day': 'dj-voir-derriere', 'modal-instance': 'mi-voir-derriere' };
+function resetFenetrePosition(id) {
+  const ov = document.getElementById(id);
+  if (!ov) return;
+  const m = ov.querySelector('.modal');
   if (m) m.style.transform = '';
-  const ov = document.getElementById('modal-day');
-  if (ov) ov.classList.remove('dj-transparent');
-  const b = document.getElementById('dj-voir-derriere');
+  ov.classList.remove('dj-transparent');
+  const b = document.getElementById(_FENETRES_MOBILES[id]);
   if (b) b.textContent = '👁 Voir derrière';
 }
-function toggleDjVoirDerriere() {
-  const ov = document.getElementById('modal-day');
-  const on = ov.classList.toggle('dj-transparent');
-  document.getElementById('dj-voir-derriere').textContent = on ? '👁 Fond normal' : '👁 Voir derrière';
+function resetDjPosition() { resetFenetrePosition('modal-day'); }
+function toggleVoirDerriere(id, btnId) {
+  const on = document.getElementById(id).classList.toggle('dj-transparent');
+  document.getElementById(btnId).textContent = on ? '👁 Fond normal' : '👁 Voir derrière';
 }
 document.addEventListener('pointerdown', ev => {
-  const head = ev.target.closest && ev.target.closest('#modal-day .dj-header');
+  const head = ev.target.closest && ev.target.closest('#modal-day .dj-header, #modal-instance .mi-header');
   if (!head || ev.target.closest('button, input, select, a')) return;
-  const m = document.querySelector('#modal-day .modal');
+  const m = head.closest('.modal');
   const r = m.getBoundingClientRect();
   const cur = (m.style.transform.match(/translate\((-?[\d.]+)px,\s*(-?[\d.]+)px\)/) || [0, 0, 0]);
-  _djDrag = { x: ev.clientX, y: ev.clientY, tx: parseFloat(cur[1]), ty: parseFloat(cur[2]), r };
+  _djDrag = { m, x: ev.clientX, y: ev.clientY, tx: parseFloat(cur[1]), ty: parseFloat(cur[2]), r };
   ev.preventDefault();
 });
 document.addEventListener('pointermove', ev => {
   if (!_djDrag) return;
-  const m = document.querySelector('#modal-day .modal');
+  const m = _djDrag.m;
   let dx = ev.clientX - _djDrag.x, dy = ev.clientY - _djDrag.y;
   const r = _djDrag.r, W = window.innerWidth, H = window.innerHeight;
   // garde le bandeau accessible : au moins 80 px de la fenêtre restent visibles dans l'écran
@@ -5432,6 +5439,7 @@ function editInstancePrecise(instId) {
   const positionDefaut = Math.floor((dureeTotale - (hasPause ? inst.pauseDuree : 30)) / 2);
   document.getElementById('mi-pause-heure').value = minToTime(inst.debut + (hasPause ? inst.pauseDebut : positionDefaut));
   onMiPauseChange();
+  resetFenetrePosition('modal-instance');
   openModal('modal-instance');
 }
 
