@@ -39,6 +39,12 @@ body::before {
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* ---------- Écran sélection employé ---------- */
+/* ---------- Identité du dépôt (nom, logo, couleur) — purement visuel ---------- */
+#identite-liseret { position: fixed; top: 0; left: 0; right: 0; height: 8px; z-index: 6; display: none; }
+#identite-bandeau { display: none; align-items: center; justify-content: center; gap: 14px; margin: -8px 0 14px; padding: 12px 18px;
+  border-radius: 14px; background: var(--surface); border: 1px solid var(--border); text-align: center; }
+#identite-logo { display: none; max-height: 56px; max-width: 160px; object-fit: contain; border-radius: 6px; }
+#identite-nom { font-size: 26px; font-weight: 800; letter-spacing: .5px; line-height: 1.15; word-break: break-word; }
 .hello { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 4px; }
 .hello-sub { text-align: center; font-size: 13px; color: var(--text-muted); margin-bottom: 18px; }
 .search-box { margin-bottom: 16px; }
@@ -161,6 +167,7 @@ body::before {
 </head>
 <body>
 
+<div id="identite-liseret"></div>
 <div class="offline-badge" id="offline-badge">📡 Hors ligne — en attente</div>
 <div class="gear-btn" id="gear-btn" onclick="openConfigGate()">⚙️</div>
 
@@ -172,6 +179,7 @@ body::before {
 
   <!-- ===== ÉCRAN SÉLECTION EMPLOYÉ ===== -->
   <div class="screen active" id="screen-select">
+    <div id="identite-bandeau"><img id="identite-logo" alt=""><div id="identite-nom"></div></div>
     <div class="hello">Bonjour 👋</div>
     <div class="hello-sub">Sélectionnez votre nom pour pointer</div>
     <div class="search-box"><input type="text" id="emp-search" placeholder="🔍 Rechercher un nom..." oninput="renderEmpGrid()"></div>
@@ -317,7 +325,43 @@ function initFirebase() {
   }
 }
 
+// ===================================================
+// IDENTITÉ DU DÉPÔT : nom en gros, couleur, logo (nœud sync/identite, écrit par l'appli admin).
+// Purement visuel : aucune incidence sur les pointages, le jeton ou les plannings. Tout est défensif —
+// donnée absente ou invalide = écran identique à avant.
+// ===================================================
+const IDENTITE_CACHE_KEY = 'pointeusenova_identite';
+function appliquerIdentite(id) {
+  try {
+    const bandeau = document.getElementById('identite-bandeau');
+    const liseret = document.getElementById('identite-liseret');
+    const nomEl = document.getElementById('identite-nom');
+    const logoEl = document.getElementById('identite-logo');
+    if (!bandeau || !liseret || !nomEl || !logoEl) return;
+    const nom = (id && typeof id.nom === 'string') ? id.nom.trim().slice(0, 60) : '';
+    const couleur = (id && typeof id.couleur === 'string' && /^#[0-9a-fA-F]{6}$/.test(id.couleur)) ? id.couleur : '';
+    const logo = (id && typeof id.logo === 'string' && /^data:image\/(png|jpeg|jpg|webp|gif|svg\+xml);base64,/.test(id.logo) && id.logo.length < 200000) ? id.logo : '';
+    nomEl.textContent = nom;
+    if (logo) { logoEl.src = logo; logoEl.style.display = 'block'; } else { logoEl.removeAttribute('src'); logoEl.style.display = 'none'; }
+    if (couleur) {
+      const r = parseInt(couleur.slice(1, 3), 16), g = parseInt(couleur.slice(3, 5), 16), b = parseInt(couleur.slice(5, 7), 16);
+      const clair = (0.299 * r + 0.587 * g + 0.114 * b) > 160;
+      bandeau.style.background = couleur; bandeau.style.borderColor = couleur; bandeau.style.color = clair ? '#111' : '#fff';
+      liseret.style.background = couleur; liseret.style.display = 'block';
+    } else {
+      bandeau.style.background = ''; bandeau.style.borderColor = ''; bandeau.style.color = '';
+      liseret.style.display = 'none';
+    }
+    bandeau.style.display = (nom || logo) ? 'flex' : 'none';
+    document.title = nom ? ('Pointeuse Nova — ' + nom) : 'Pointeuse Nova';
+    try { localStorage.setItem(IDENTITE_CACHE_KEY, JSON.stringify({ nom, couleur, logo })); } catch (e) {}
+  } catch (e) { console.error('Identité:', e); }
+}
+// Affichage immédiat depuis le dernier état connu (utile hors ligne), avant la réponse de Firebase.
+try { const c = JSON.parse(localStorage.getItem(IDENTITE_CACHE_KEY) || 'null'); if (c) appliquerIdentite(c); } catch (e) {}
+
 function listenSyncData() {
+  try { fbDb.ref('sync/identite').on('value', snap => appliquerIdentite(snap.val())); } catch (e) { console.error('Identité listener:', e); }
   fbDb.ref('sync/employes').on('value', snap => { employes = snap.val() || []; if (document.getElementById('screen-select').classList.contains('active')) renderEmpGrid(); });
   fbDb.ref('sync/tasks').on('value', snap => { tasks = snap.val() || []; });
   // Une fois le planning reçu, rafraîchit l'écran d'action si un employé est déjà affiché
@@ -333,25 +377,47 @@ function listenSyncData() {
     pointagePauseSeuilMin = snap.val()?.pointagePauseSeuilMin ?? 40;
   });
   fbDb.ref('pointeuse/tokenAutorise').on('value', snap => { verifierTokenMachine(snap.val()); });
+  // Pointeuses supplémentaires autorisées (liste). Si la lecture échoue, on retombe sur le comportement
+  // d'origine (jeton unique seul) — la pointeuse principale n'est jamais pénalisée.
+  try {
+    fbDb.ref('pointeuse/machines').on('value', snap => { setMachinesAutorisees(snap.val()); },
+      () => { setMachinesAutorisees(null); });
+  } catch (e) { setMachinesAutorisees(null); }
 }
 
+// Autorisation de la machine : jeton unique historique (pointeuse/tokenAutorise) OU liste de machines
+// (pointeuse/machines). Aucune restriction tant que ni l'un ni l'autre n'existe. Une machine dont le jeton
+// est celui de l'ancien champ n'est JAMAIS bloquée, quoi qu'il arrive à la liste.
+let _tokenLegacy;      // undefined = pas encore reçu
+let _machinesAut;      // undefined = liste pas encore reçue ; objet (éventuellement vide) sinon
 function verifierTokenMachine(tokenDistant) {
+  _tokenLegacy = tokenDistant || null;
+  evaluerAutorisationMachine();
+}
+function setMachinesAutorisees(obj) {
+  _machinesAut = (obj && typeof obj === 'object') ? obj : {};
+  evaluerAutorisationMachine();
+}
+function evaluerAutorisationMachine() {
+  if (_tokenLegacy === undefined) return;
   const tokenLocal = cfg.machineToken;
-  if (!tokenDistant) {
-    // Aucun token configuré par l'admin : on laisse passer (première utilisation ou admin qui
-    // n'a pas encore activé la restriction).
+  const liste = Object.values(_machinesAut || {}).map(m => m && m.token).filter(Boolean);
+  const bloque = document.getElementById('screen-blocked').classList.contains('active');
+  const autorise = !!tokenLocal && (tokenLocal === _tokenLegacy || liste.includes(tokenLocal));
+  if (autorise) {
+    // Token valide : retour à l'écran principal si on était bloqué
+    if (bloque) showScreen('screen-select');
     return;
   }
-  if (!tokenLocal || tokenLocal !== tokenDistant) {
-    const info = document.getElementById('blocked-machine-info');
-    if (info) info.textContent = `Identifiant machine : ${tokenLocal || '(non défini)'}`;
-    showScreen('screen-blocked');
-  } else {
-    // Token valide : retour à l'écran principal si on était bloqué
-    if (document.getElementById('screen-blocked').classList.contains('active')) {
-      showScreen('screen-select');
-    }
+  if (_machinesAut === undefined) return; // on attend la liste avant de bloquer (la machine peut y figurer)
+  if (!_tokenLegacy && !liste.length) {
+    // Aucune restriction configurée par l'admin (première utilisation ou restriction levée) : on laisse passer.
+    if (bloque) showScreen('screen-select');
+    return;
   }
+  const info = document.getElementById('blocked-machine-info');
+  if (info) info.textContent = `Identifiant machine : ${tokenLocal || '(non défini)'}`;
+  showScreen('screen-blocked');
 }
 
 function updateOfflineBadge(offline) {
